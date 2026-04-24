@@ -30,35 +30,6 @@ jobs:
         https://github.com/ZyCromerZ/Clang \
         toolchain/clang
 
-    - name: Download NetHunter Patches
-      run: |
-        mkdir -p nh-patches
-        curl -Lo nh-patches.zip \
-        "https://github.com/offensive-security/nethunter-kernel-patches/archive/refs/heads/master.zip" \
-        || \
-        curl -Lo nh-patches.zip \
-        "https://github.com/Januur/NetHunter-PocoM3-A16/releases/download/patches/nh-patches.zip" \
-        || true
-        
-        # Agar download fail ho to skip karo
-        if [ -f nh-patches.zip ]; then
-          unzip -q nh-patches.zip -d nh-patches-tmp
-          mv nh-patches-tmp/*/* nh-patches/ || true
-        fi
-
-    - name: Apply NetHunter Patches
-      run: |
-        if [ -d nh-patches ] && \
-        [ "$(ls -A nh-patches)" ]; then
-          for patch in nh-patches/*.patch; do
-            git apply "$patch" && \
-            echo "Applied: $patch" || \
-            echo "Skipped: $patch"
-          done
-        else
-          echo "No patches found, continuing..."
-        fi
-
     - name: Setup Kernel Config
       run: |
         export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:$PATH"
@@ -72,20 +43,39 @@ jobs:
           O=out \
           vendor/citrus_defconfig
 
-    - name: Enable CAN Support
+    - name: Enable NetHunter and CAN Support
       run: |
         cd out
-        sed -i 's/# CONFIG_CAN is not set/CONFIG_CAN=y/' .config
+        # CAN Support
+        echo "CONFIG_CAN=y" >> .config
         echo "CONFIG_CAN_RAW=y" >> .config
         echo "CONFIG_CAN_BCM=y" >> .config
         echo "CONFIG_CAN_VCAN=m" >> .config
         echo "CONFIG_CAN_SLCAN=m" >> .config
         echo "CONFIG_CAN_SOCKETCAN=y" >> .config
+        # WiFi Monitor Mode
         echo "CONFIG_WIRELESS=y" >> .config
         echo "CONFIG_CFG80211=y" >> .config
         echo "CONFIG_MAC80211=y" >> .config
+        echo "CONFIG_MAC80211_MESH=y" >> .config
+        # USB Support
         echo "CONFIG_USB_SERIAL=y" >> .config
         echo "CONFIG_USB_SERIAL_GENERIC=y" >> .config
+        echo "CONFIG_USB_SERIAL_FTDI_SIO=y" >> .config
+        # HID Support
+        echo "CONFIG_HID=y" >> .config
+        echo "CONFIG_UHID=y" >> .config
+        # NetHunter Specific
+        echo "CONFIG_NETFILTER=y" >> .config
+        echo "CONFIG_IP_NF_TARGET_TTL=y" >> .config
+        # Rebuild config
+        make \
+          ARCH=arm64 \
+          CC=$GITHUB_WORKSPACE/toolchain/clang/bin/clang \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          LLVM=1 \
+          O=. \
+          olddefconfig
 
     - name: Build Kernel
       run: |
