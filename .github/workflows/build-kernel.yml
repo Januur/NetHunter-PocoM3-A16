@@ -30,19 +30,34 @@ jobs:
         https://github.com/ZyCromerZ/Clang \
         toolchain/clang
 
-    - name: Clone NetHunter Patches
+    - name: Download NetHunter Patches
       run: |
-        git clone --depth=1 \
-        https://gitlab.com/kalilinux/nethunter/nethunter-kernel-patches \
-        nh-patches
+        mkdir -p nh-patches
+        curl -Lo nh-patches.zip \
+        "https://github.com/offensive-security/nethunter-kernel-patches/archive/refs/heads/master.zip" \
+        || \
+        curl -Lo nh-patches.zip \
+        "https://github.com/Januur/NetHunter-PocoM3-A16/releases/download/patches/nh-patches.zip" \
+        || true
+        
+        # Agar download fail ho to skip karo
+        if [ -f nh-patches.zip ]; then
+          unzip -q nh-patches.zip -d nh-patches-tmp
+          mv nh-patches-tmp/*/* nh-patches/ || true
+        fi
 
     - name: Apply NetHunter Patches
       run: |
-        for patch in nh-patches/generic/*.patch; do
-          git apply "$patch" && \
-          echo "Applied: $patch" || \
-          echo "Skipped: $patch"
-        done
+        if [ -d nh-patches ] && \
+        [ "$(ls -A nh-patches)" ]; then
+          for patch in nh-patches/*.patch; do
+            git apply "$patch" && \
+            echo "Applied: $patch" || \
+            echo "Skipped: $patch"
+          done
+        else
+          echo "No patches found, continuing..."
+        fi
 
     - name: Setup Kernel Config
       run: |
