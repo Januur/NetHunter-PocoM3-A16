@@ -1,0 +1,126 @@
+name: Build NetHunter Kernel - Poco M3
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 1
+
+    - name: Setup Build Environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          git ccache automake flex lzop bison \
+          gperf build-essential zip curl \
+          zlib1g-dev g++-multilib libxml2-utils \
+          bzip2 libbz2-dev bc libncurses5-dev \
+          libssl-dev make python3 binutils
+
+    - name: Clone Clang Toolchain
+      run: |
+        mkdir -p toolchain
+        git clone --depth=1 \
+        https://github.com/ZyCromerZ/Clang \
+        toolchain/clang
+
+    - name: Clone NetHunter Patches
+      run: |
+        git clone --depth=1 \
+        https://gitlab.com/kalilinux/nethunter/nethunter-kernel-patches \
+        nh-patches
+
+    - name: Apply NetHunter Patches
+      run: |
+        for patch in nh-patches/generic/*.patch; do
+          git apply "$patch" && \
+          echo "✅ Applied: $patch" || \
+          echo "❌ Skipped: $patch"
+        done
+
+    - name: Setup Kernel Config
+      run: |
+        export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:$PATH"
+        export ARCH=arm64
+        
+        make \
+          ARCH=arm64 \
+          CC=clang \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+          LLVM=1 \
+          O=out \
+          vendor/citrus_defconfig
+
+    - name: Enable CAN Support
+      run: |
+        cd out
+        # CAN Bus
+        sed -i 's/# CONFIG_CAN is not set/CONFIG_CAN=y/' .config
+        echo "CONFIG_CAN_RAW=y" >> .config
+        echo "CONFIG_CAN_BCM=y" >> .config
+        echo "CONFIG_CAN_VCAN=m" >> .config
+        echo "CONFIG_CAN_SLCAN=m" >> .config
+        echo "CONFIG_CAN_SOCKETCAN=y" >> .config
+        # NetHunter Extra
+        echo "CONFIG_WIRELESS=y" >> .config
+        echo "CONFIG_CFG80211=y" >> .config
+        echo "CONFIG_MAC80211=y" >> .config
+        echo "CONFIG_USB_SERIAL=y" >> .config
+        echo "CONFIG_USB_SERIAL_GENERIC=y" >> .config
+
+    - name: Build Kernel
+      run: |
+        export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:$PATH"
+        export ARCH=arm64
+        
+        make \
+          ARCH=arm64 \
+          CC=clang \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+          LLVM=1 \
+          LLVM_IAS=1 \
+          O=out \
+          -j$(nproc) 2>&1 | tee build.log
+          
+    - name: Upload Build Log
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-log
+        path: build.log
+
+    - name: Make Flashable Zip
+      run: |
+        git clone --depth=1 \
+        https://github.com/osm0sis/AnyKernel3 \
+        anykernel
+        
+        # Kernel image copy karo
+        cp out/arch/arm64/boot/Image.gz \
+        anykernel/ 2>/dev/null || \
+        cp out/arch/arm64/boot/Image \
+        anykernel/
+        
+        # Modules copy karo
+        mkdir -p anykernel/modules
+        find out -name "*.ko" -exec \
+        cp {} anykernel/modules/ \;
+        
+        cd anykernel
+        zip -r9 \
+        NetHunter-PocoM3-A16-$(date +%Y%m%d).zip \
+        * -x .git README.md
+
+    - name: Upload Kernel Zip
+      uses: actions/upload-artifact@v3
+      with:
+        name: NetHunter-PocoM3-A16
+        path: anykernel/NetHunter-PocoM3-A16-*.zip
