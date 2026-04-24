@@ -21,7 +21,8 @@ jobs:
           gperf build-essential zip curl \
           zlib1g-dev g++-multilib libxml2-utils \
           bzip2 libbz2-dev bc libncurses5-dev \
-          libssl-dev make python3 binutils
+          libssl-dev make python3 binutils \
+          lld llvm
 
     - name: Clone Clang Toolchain
       run: |
@@ -29,6 +30,11 @@ jobs:
         git clone --depth=1 \
         https://github.com/ZyCromerZ/Clang \
         toolchain/clang
+
+    - name: Check Config Files
+      run: |
+        echo "=== Available Configs ==="
+        ls arch/arm64/configs/vendor/
 
     - name: Setup Kernel Config
       run: |
@@ -41,7 +47,7 @@ jobs:
           CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
           LLVM=1 \
           O=out \
-          vendor/citrus_defconfig
+          vendor/chime_defconfig
 
     - name: Enable NetHunter and CAN Support
       run: |
@@ -65,10 +71,10 @@ jobs:
         # HID Support
         echo "CONFIG_HID=y" >> .config
         echo "CONFIG_UHID=y" >> .config
-        # NetHunter Specific
+        # NetHunter
         echo "CONFIG_NETFILTER=y" >> .config
         echo "CONFIG_IP_NF_TARGET_TTL=y" >> .config
-        # Rebuild config
+        # Fix config
         make \
           ARCH=arm64 \
           CC=$GITHUB_WORKSPACE/toolchain/clang/bin/clang \
